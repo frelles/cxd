@@ -1,7 +1,6 @@
-# CXD Library Guide
+# CXD Component Extensible Data
 
-CXD stands for Component Extensible Data, a standalone C++ parser. CXD the Simplex structured data
-format. Use it when a host tool needs to load configuration, manifests, test
+CXD stands for Component Extensible Data, a standalone C++ parser. Use it when a host tool needs to load configuration, manifests, test
 fixtures, or embedded `data { }`-style content into a JSON-like tree.
 
 This is practical usage documentation. For exact language rules, see
