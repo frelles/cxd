@@ -7,8 +7,8 @@
 | C target   | `cxd_c`  |
 | C++ target | `cxd` (bindings over `cxd_c`) |
 | C header   | [`include/cxd/cxd.h`](include/cxd/cxd.h) |
-| C++ header | [`../cpp/cxd/include/cxd/cxd.hpp`](../cpp/cxd/include/cxd/cxd.hpp) |
-| Spec       | [`docs/[CXD] Specification.md`](../../../docs/[CXD]%20Specification.md) |
+| C++ header | [`../cpp/cxd/include/cxd/cxd.hpp`](/include/cxd/cxd.hpp) |
+| Spec       | [`CXD Specification.md`](CXD%20Specification%20Specification.md) |
 
 This guide covers **library usage**. Normative syntax lives in the spec.
 
