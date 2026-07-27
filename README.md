@@ -4,10 +4,10 @@
 
 | Item | Detail |
 | ---- | ------ |
-| C target   | `cxd_c`  |
-| C++ target | `cxd` (bindings over `cxd_c`) |
-| C header   | [`include/cxd/cxd.h`](include/cxd/cxd.h) |
-| C++ header | [`../cpp/cxd/include/cxd/cxd.hpp`](/include/cxd/cxd.hpp) |
+| C target   | `cxd_c`                                                          |
+| C++ target | `cxd` (bindings over `cxd_c`)                                    |
+| C header   | [`include/cxd/cxd.h`](include/cxd/cxd.h)                         |
+| C++ header | [`include/cxd/cxd.hpp`](include/cxd/cxd.hpp)                     |
 | Spec       | [`CXD Specification.md`](CXD%20Specification%20Specification.md) |
 
 This guide covers **library usage**. Normative syntax lives in the spec.
@@ -227,6 +227,4 @@ build\c-lib\cpp\Debug\cxd_tests.exe
 
 ## See also
 
-- [CXP library guide](../cxp/README.md)
-- [Simplex C libraries index](../README.md)
-- [`docs/[CXD] Specification.md`](../../../docs/[CXD]%20Specification.md)
+- [`CXD Specification.md`](CXD%20Specification.md)
