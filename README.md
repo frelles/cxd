@@ -1,149 +1,232 @@
-# CXD Component Extensible Data
+# CXD Library (`cxd_c` / `cxd`)
 
-CXD stands for Component Extensible Data, a standalone C++ parser. Use it when a host tool needs to load configuration, manifests, test
-fixtures, or embedded `data { }`-style content into a JSON-like tree.
+**Component Extensible Data** — a standalone parser for `.cxd` files and CXD-shaped text. Use it when a host tool needs configuration, manifests, test fixtures, or embedded `data { }`-style content in a JSON-like tree.
 
-This is practical usage documentation. For exact language rules, see
-`docs/[CXD] Specification.md`.
+| Item | Detail |
+| ---- | ------ |
+| C target   | `cxd_c`  |
+| C++ target | `cxd` (bindings over `cxd_c`) |
+| C header   | [`include/cxd/cxd.h`](include/cxd/cxd.h) |
+| C++ header | [`../cpp/cxd/include/cxd/cxd.hpp`](../cpp/cxd/include/cxd/cxd.hpp) |
+| Spec       | [`docs/[CXD] Specification.md`](../../../docs/[CXD]%20Specification.md) |
 
-## Build Target
+This guide covers **library usage**. Normative syntax lives in the spec.
+
+---
+
+## Build and link
+
+From the repo (recommended):
+
+```bat
+cmake -S library/c -B build/c-lib -DCXD_BUILD_TESTS=ON
+cmake --build build/c-lib --config Debug --target cxd_c
+```
+
+CMake in another project:
 
 ```cmake
-add_subdirectory(path/to/simplex/clib/cxd)
-target_link_libraries(my_tool PRIVATE cxd)
+add_subdirectory(path/to/simplex/library/c)
+target_link_libraries(my_tool PRIVATE cxd_c)   # C
+# or
+target_link_libraries(my_tool PRIVATE cxd)     # C++
 ```
 
-```cpp
-#include <cxd/cxd.hpp>
+Manual C link (MSVC example):
+
+```bat
+cl /I path\to\library\c\cxd\include myapp.c path\to\library\c\cxd\src\cxd.c
 ```
 
-## Parse a String
+---
+
+## C API quick start
+
+```c
+#include "cxd/cxd.h"
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(void) {
+    const char *src =
+        "@type:app.config\n\n"
+        "host: \"localhost\",\n"
+        "port: 8080,\n";
+
+    CxdDocument doc;
+    char err[256];
+
+    if (!cxd_parse(src, "app.cxd", NULL, &doc, err, sizeof(err))) {
+        fprintf(stderr, "parse error: %s\n", err);
+        return 1;
+    }
+
+    if (doc.type) printf("type: %s\n", doc.type);
+
+    const CxdValue *host = cxd_get(&doc.root, "host");
+    const CxdValue *port = cxd_get(&doc.root, "port");
+
+    if (host && host->kind == CXD_STRING)
+        printf("host=%s\n", host->string);
+    if (port && port->kind == CXD_NUMBER)
+        printf("port=%.0f\n", port->number);
+
+    cxd_free_document(&doc);
+    return 0;
+}
+```
+
+Parse a file:
+
+```c
+CxdDocument doc;
+char err[256];
+if (!cxd_parse_file("config/app.cxd", NULL, &doc, err, sizeof(err))) { /* ... */ }
+```
+
+Export JSON:
+
+```c
+char *json = NULL;
+size_t len = 0;
+if (cxd_to_json(&doc.root, &json, &len)) {
+    printf("%s\n", json);
+    free(json);
+}
+```
+
+---
+
+## C value model
+
+`CxdValue` is a tagged tree node:
+
+| `CxdKind`     | Payload fields                          |
+| ------------- | --------------------------------------- |
+| `CXD_NULL`    | —                                       |
+| `CXD_BOOL`    | `boolean`                               |
+| `CXD_NUMBER`  | `number` (IEEE double)                  |
+| `CXD_STRING`  | `string` (heap-owned)                   |
+| `CXD_ARRAY`   | `array`, `array_len`                    |
+| `CXD_OBJECT`  | `object`, `object_len` (`CxdField` list)|
+
+Every value carries source location: `line`, `col` (1-based).
+
+**Line capture:** when a field value is parsed as raw line text, `is_line_capture` is true and `string` holds the captured line (without trailing comma/newline handling per spec).
+
+Object helpers:
+
+```c
+const CxdValue *v = cxd_get(&doc.root, "database");
+if (cxd_has(&doc.root, "enabled")) { /* ... */ }
+CxdValue *mut = cxd_get_mut(&doc.root, "count");  /* in-place edit */
+```
+
+Objects preserve insertion order (linked field list, not a hash map).
+
+---
+
+## Parse options (C)
+
+```c
+CxdParseOptions opts;
+cxd_options_default(&opts);
+opts.allow_type_header = false;   /* embedded CXD inside another syntax */
+
+cxd_parse("name: Acme,\n", "<inline>", &opts, &doc, err, sizeof(err));
+```
+
+| Field               | Default | Meaning |
+| ------------------- | ------- | ------- |
+| `allow_type_header` | `true`  | Accept leading `@type:name` document header |
+
+When `allow_type_header` is `false`, a leading `@type:` line is a **syntax error** (use for inline `data { }` blocks).
+
+---
+
+## C++ API quick start
+
+The C++ layer wraps the C library and throws on failure.
 
 ```cpp
 #include <cxd/cxd.hpp>
 #include <iostream>
 
 int main() {
-    auto doc = cxd::parse(R"(
-        @type:tool.config
+    try {
+        auto doc = cxd::parse(R"(
+            @type:tool.config
 
-        host: localhost,
-        port: 8080,
-        features: [logging, metrics],
-    )");
+            host: localhost,
+            port: 8080,
+            features: [logging, metrics],
+        )");
 
-    const cxd::Value* host = doc.root.get("host");
-    const cxd::Value* port = doc.root.get("port");
+        if (doc.type) std::cout << *doc.type << "\n";
 
-    if (host && host->isString()) std::cout << host->string << "\n";
-    if (port && port->isNumber()) std::cout << port->number << "\n";
-}
-```
+        if (const auto* host = doc.root.get("host"))
+            if (host->isString()) std::cout << host->string << "\n";
 
-`parse()` returns a `cxd::Document`:
+        if (const auto* port = doc.root.get("port"))
+            if (port->isNumber()) std::cout << port->number << "\n";
 
-- `doc.type` is the optional `@type:name` header.
-- `doc.root` is a `cxd::Value`.
-
-## Parse a File
-
-```cpp
-try {
-    cxd::Document doc = cxd::parseFile("config/app.cxd");
-    if (doc.root.has("database")) {
-        // ...
+        std::cout << cxd::toJson(doc.root, 2) << "\n";
+    } catch (const cxd::ParseError& e) {
+        std::cerr << e.what() << "\n";
     }
-} catch (const cxd::ParseError& e) {
-    std::cerr << e.what() << " at " << e.line << ":" << e.col << "\n";
 }
 ```
 
-## Value Types
-
-`cxd::Value` is a tagged value:
-
-| Kind          | Check        | Data member |
-| ------------- | ------------ | ----------- |
-| Null          | `isNull()`   |             |
-| Bool          | `isBool()`   | `boolean`   |
-| Number        | `isNumber()` | `number`    |
-| String        | `isString()` | `string`    |
-| Array         | `isArray()`  | `array`     |
-| Object        | `isObject()` | `object`    |
-
-Objects preserve insertion order and are stored as
-`std::vector<std::pair<std::string, Value>>`.
-
-Common helpers:
+File API:
 
 ```cpp
-const cxd::Value* name = doc.root.get("name");
-bool hasPort = doc.root.has("port");
-doc.root.set("enabled", cxd::Value::bool_val(true));
+auto doc = cxd::parseFile("config/app.cxd");
 ```
 
-## Line Capture
+`cxd::Value` mirrors the C tree with `std::vector` containers and `get` / `has` / `set` on objects.
 
-CXD can capture non-standard value text as a string:
+---
 
-```cpp
-auto doc = cxd::parse("query: SELECT id FROM users WHERE active = 1,\n");
-const cxd::Value* query = doc.root.get("query");
+## Supported CXD surface (this library)
 
-if (query && query->isLineCapture) {
-    // query->string == "SELECT id FROM users WHERE active = 1"
-}
-```
+Implemented in the current C parser:
 
-This is useful for host DSLs where CXD owns the outer structure but the value is
-interpreted by another layer.
+- Implicit objects (`key: value,` at document root)
+- Explicit `{ key: value, }` objects and `[ ... ]` arrays
+- `@type:` document header (optional)
+- Anchors (`&name = { ... }`), spread (`...name`), clone (`*name`)
+- Described lists (`@[cols] [ rows ]`)
+- Line capture values
+- Numbers: decimal, grouped spaces, `0x` / `0b` / `0o`, scientific
+- Strings: `"..."`, `'...'`, triple-quoted, bare identifiers as strings
+- `#` line comments
 
-## Parse Options
+**C++ `ParseOptions` fields** beyond `allowTypeHeader` (`keyMode`, `keyValidator`, `allowPropertyKeys`) are declared in the header for API compatibility but are **not wired through** to the C backend yet — only `allowTypeHeader` affects parsing today.
 
-Use `ParseOptions` when embedding CXD in another syntax.
+**Known gap:** triple-quoted string de-indentation may differ from the legacy all-C++ parser; see `library/c/cpp/tests/test_cxd.cpp` if you rely on that form.
 
-```cpp
-cxd::ParseOptions opts;
-opts.allowTypeHeader = false;
+---
 
-auto doc = cxd::parse("name: Acme,\n", "<inline>", opts);
-```
+## Memory and errors
 
-Available options:
+**C:** all functions return `bool`. On failure, `cxd_parse` / `cxd_parse_file` write a message into `err` (if `err_cap > 0`). Always call `cxd_free_document` when done; it frees `type`, the root tree, and nested allocations.
 
-- `allowTypeHeader`: accept or reject a leading `@type:`.
-- `keyMode`: choose standard CXD keys or ECMAScript-style identifiers.
-- `keyValidator`: provide a host-specific key scanner.
-- `allowPropertyKeys`: allow `@name` as object keys.
+**C++:** failures throw `cxd::ParseError` (message only; line/col are `0` until the C layer reports locations in `err`).
 
-The library no longer ships any domain-specific key validator. If a host format
-needs special keys, keep that validator in the host layer and pass it through
-`ParseOptions`.
+---
 
-## JSON Output
-
-```cpp
-std::string json = cxd::toJson(doc.root, 2);
-```
-
-`toJson()` serializes the value tree for diagnostics, tests, or interoperability.
-
-## Error Handling
-
-Invalid input throws `cxd::ParseError`.
-
-```cpp
-try {
-    cxd::parse("{ key val }");
-} catch (const cxd::ParseError& e) {
-    std::cerr << e.what() << " at line " << e.line << "\n";
-}
-```
-
-## Test
+## Tests
 
 ```bat
-cmake -S . -B build\Debug -DCXD_BUILD_TESTS=ON
-cmake --build build\Debug --config Debug --target cxd_tests
-build\Debug\stage0bootstrap\clib\cxd\Debug\cxd_tests.exe
+cmake --build build/c-lib --config Debug --target cxd_c_tests cxd_tests
+build\c-lib\cxd\Debug\cxd_c_tests.exe
+build\c-lib\cpp\Debug\cxd_tests.exe
 ```
+
+---
+
+## See also
+
+- [CXP library guide](../cxp/README.md)
+- [Simplex C libraries index](../README.md)
+- [`docs/[CXD] Specification.md`](../../../docs/[CXD]%20Specification.md)
